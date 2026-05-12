@@ -1,24 +1,53 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as SplashScreen from 'expo-splash-screen';
+import { useEffect } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
+import {
+  Archivo_400Regular,
+  Archivo_500Medium,
+  Archivo_600SemiBold,
+  Archivo_700Bold,
+  Archivo_800ExtraBold,
+  Archivo_900Black,
+  useFonts,
+} from '@expo-google-fonts/archivo';
+import { IBMPlexMono_500Medium, IBMPlexMono_700Bold } from '@expo-google-fonts/ibm-plex-mono';
+import { colors } from '@/src/theme/tokens';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  const [loaded] = useFonts({
+    Archivo_400Regular,
+    Archivo_500Medium,
+    Archivo_600SemiBold,
+    Archivo_700Bold,
+    Archivo_800ExtraBold,
+    Archivo_900Black,
+    IBMPlexMono_500Medium,
+    IBMPlexMono_700Bold,
+  });
+
+  useEffect(() => {
+    if (loaded) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [loaded]);
+
+  if (!loaded) return null;
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.bg },
+          animation: 'fade',
+        }}
+      />
+      <StatusBar style="light" />
+    </GestureHandlerRootView>
   );
 }
