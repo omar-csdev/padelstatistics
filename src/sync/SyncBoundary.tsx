@@ -5,5 +5,8 @@ import { useSync } from './useSync';
 // Side-effect only — renders children as-is.
 export function SyncBoundary({ children }: { children: ReactNode }) {
   useSync();
+// TEMPORARY STUB. Owner: Agent C.
+// Will be overwritten by phase2-sync. Do not add logic here.
+
   return <>{children}</>;
 }

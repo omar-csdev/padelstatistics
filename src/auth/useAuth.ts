@@ -1,3 +1,4 @@
+<<<<<<< phase2-sync
 // TEMPORARY STUB. Owner: Agent B.
 // useSync only reads `session?.user?.id`, so the surface here is intentionally
 // minimal. Agent B will overwrite this file with the real auth hook.
@@ -20,3 +21,8 @@ export function useAuth(): AuthValue {
     signOut: async () => {},
   };
 }
+=======
+import { useAuthCtx } from './AuthProvider';
+
+export const useAuth = useAuthCtx;
+>>>>>>> padel-mvp
