@@ -44,3 +44,5 @@ app-example
 
 
 CLAUDE.md
+.claude/*
+.claude

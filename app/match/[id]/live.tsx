@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -30,8 +30,9 @@ export default function LiveScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ id: string }>();
   const matchId = useMemo(() => Number(params.id), [params.id]);
-  const { state, loading, logPoint, undoLast, switchSides } = useMatch(matchId);
+  const { state, loading, logPoint, undoLast, switchSides, finish } = useMatch(matchId);
   const [active, setActive] = useState<{ pos: Position; name: string } | null>(null);
+  const [confirmFinish, setConfirmFinish] = useState(false);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -87,7 +88,7 @@ export default function LiveScreen() {
             {state.config.scoring === 'golden' ? 'GOLDEN PT' : 'ADVANTAGE'} · BO{state.config.bestOf}
           </Text>
         </View>
-        <Pressable onPress={() => router.replace(`/match/${matchId}/post` as never)} style={styles.iconBtn}>
+        <Pressable onPress={() => setConfirmFinish(true)} style={styles.iconBtn}>
           <Ionicons name="checkmark" size={22} color={colors.ink2} />
         </Pressable>
       </View>
@@ -136,6 +137,45 @@ export default function LiveScreen() {
           onCancel={() => setActive(null)}
         />
       ) : null}
+
+      <Modal
+        visible={confirmFinish}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setConfirmFinish(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setConfirmFinish(false)}>
+          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.modalIconWrap}>
+              <Ionicons name="flag" size={22} color={colors.accent2} />
+            </View>
+            <Text style={styles.modalTitle}>FINISH MATCH?</Text>
+            <Text style={styles.modalBody}>
+              This will end the match and lock the score. You&apos;ll be taken to the summary and the
+              match will be marked as finished.
+            </Text>
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={() => setConfirmFinish(false)}
+                style={[styles.modalBtn, styles.modalBtnGhost]}
+              >
+                <Text style={styles.modalBtnGhostLabel}>NO</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+                  setConfirmFinish(false);
+                  finish();
+                  router.replace(`/match/${matchId}/post` as never);
+                }}
+                style={[styles.modalBtn, styles.modalBtnPrimary]}
+              >
+                <Text style={styles.modalBtnPrimaryLabel}>YES, FINISH</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -239,4 +279,80 @@ const styles = StyleSheet.create({
     color: colors.ink3,
   },
   metaText: { color: colors.ink3, fontFamily: fonts.regular },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(3, 10, 20, 0.78)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 22,
+    alignItems: 'center',
+  },
+  modalIconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  modalTitle: {
+    color: colors.ink,
+    fontFamily: fonts.extrabold,
+    fontSize: 16,
+    letterSpacing: 2.4,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalBody: {
+    color: colors.ink2,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  modalBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBtnGhost: {
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    backgroundColor: 'transparent',
+  },
+  modalBtnGhostLabel: {
+    color: colors.ink2,
+    fontFamily: fonts.extrabold,
+    fontSize: 12,
+    letterSpacing: 2,
+  },
+  modalBtnPrimary: {
+    backgroundColor: colors.accent,
+  },
+  modalBtnPrimaryLabel: {
+    color: colors.onAccent,
+    fontFamily: fonts.extrabold,
+    fontSize: 12,
+    letterSpacing: 2,
+  },
 });
