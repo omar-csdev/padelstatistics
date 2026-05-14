@@ -16,12 +16,10 @@ interface ErrorSeg {
 }
 
 const WINNERS: WinnerSeg[] = [
-  { id: 'lob', label: 'LOB' },
   { id: 'vibora', label: 'VIBORA' },
   { id: 'smash', label: 'SMASH' },
   { id: 'bandeja', label: 'BANDEJA' },
   { id: 'volley', label: 'VOLLEY' },
-  { id: 'other', label: 'OTHER' },
 ];
 
 const ERRORS: ErrorSeg[] = [
@@ -71,8 +69,9 @@ export function RadialWheel({ playerName, playerPosLabel, size = 340, onPick, on
   const rIn = W * 0.1;
 
   const winnerSegs = WINNERS.map((w, i) => {
-    const a1 = -90 + i * 30;
-    const a2 = a1 + 30;
+    const sweep = 180 / WINNERS.length;
+    const a1 = -90 + i * sweep;
+    const a2 = a1 + sweep;
     const mid = (a1 + a2) / 2;
     const [lx, ly] = polar(cx, cy, (rOut + rMid) / 2, mid);
     return { ...w, a1, a2, lx, ly };
