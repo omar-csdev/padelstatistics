@@ -1,7 +1,11 @@
+// TEMPORARY STUB. Owner: Agent B (auth). Replace on merge of B's PR.
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import 'react-native-url-polyfill/auto';
 import * as SecureStore from 'expo-secure-store';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-
+export const supabase: SupabaseClient = createClient(
+  process.env.EXPO_PUBLIC_SUPABASE_URL ?? 'https://placeholder.supabase.co',
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? 'placeholder');
 const ExpoSecureStoreAdapter = {
   getItem: (key: string) => SecureStore.getItemAsync(key),
   setItem: (key: string, value: string) => SecureStore.setItemAsync(key, value),
