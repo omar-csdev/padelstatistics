@@ -20,7 +20,7 @@ interface UseMatchResult {
   finish: () => void;
 }
 
-export function useMatch(matchId: number): UseMatchResult {
+export function useMatch(matchId: string): UseMatchResult {
   const [state, setState] = useState<MatchState | null>(null);
   const [loading, setLoading] = useState(true);
 

@@ -35,7 +35,7 @@ function isValidPos(s: string): s is Position {
 export default function BreakdownScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ id: string; pos: string }>();
-  const matchId = useMemo(() => Number(params.id), [params.id]);
+  const matchId = useMemo(() => String(params.id ?? ''), [params.id]);
   const pos: Position | null = isValidPos(params.pos as string) ? (params.pos as Position) : null;
   const [state, setState] = useState<MatchState | null>(null);
 
