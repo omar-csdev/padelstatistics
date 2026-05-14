@@ -1,8 +1,12 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { generateAISummary, type AISummaryPayload } from '@/src/api/aiSummary';
+import { AISummaryView } from '@/src/components/AISummaryView';
+import { Chip } from '@/src/components/Chip';
 import { MomentumChart } from '@/src/components/MomentumChart';
 import { ScreenHeader } from '@/src/components/ScreenHeader';
 import { SectionTitle } from '@/src/components/SectionTitle';
@@ -12,6 +16,13 @@ import type { MatchState, PlayerStats, Position } from '@/src/engine/types';
 import { getEvents } from '@/src/store/events';
 import { finishMatch, getMatch } from '@/src/store/matches';
 import { colors, fonts } from '@/src/theme/tokens';
+
+type AIState =
+  | { kind: 'idle' }
+  | { kind: 'loading' }
+  | { kind: 'loaded'; cached: boolean; payload: AISummaryPayload; usage: { used: number; limit: number } }
+  | { kind: 'quota'; resets_at: string; usage: { used: number; limit: number } }
+  | { kind: 'error'; message: string };
 
 const POSITION_LABELS: Record<Position, string> = {
   tl: 'TOP · LEFT',
@@ -31,23 +42,38 @@ function formatDuration(start: number, end: number): string {
 export default function PostMatchScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ id: string }>();
-  const matchId = useMemo(() => Number(params.id), [params.id]);
+  const matchId = useMemo(() => String(params.id ?? ''), [params.id]);
   const [state, setState] = useState<MatchState | null>(null);
   const [duration, setDuration] = useState('00:00');
+  const [ai, setAi] = useState<AIState>({ kind: 'idle' });
 
   useFocusEffect(
     useCallback(() => {
-      const row = getMatch(matchId);
+      // TODO(phase2-sync): remove cast after Agent C migrates PKs to UUID/TEXT.
+      const row = getMatch(matchId as unknown as number);
       if (!row) return;
-      const events = getEvents(matchId);
+      const events = getEvents(matchId as unknown as number);
       const folded = fold(row.config, events, row.createdAt);
       if (isMatchOver(folded) && row.status !== 'finished') {
-        finishMatch(matchId);
+        // TODO(phase2-sync): remove cast after Agent C migrates PKs to UUID/TEXT.
+        finishMatch(matchId as unknown as number);
       }
       setState(folded);
       setDuration(formatDuration(row.createdAt, row.finishedAt ?? Date.now()));
     }, [matchId]),
   );
+
+  const generate = useCallback(async () => {
+    setAi({ kind: 'loading' });
+    const res = await generateAISummary(matchId);
+    if (res.ok) {
+      setAi({ kind: 'loaded', cached: res.cached, payload: res.payload, usage: res.usage });
+    } else if (res.error === 'rate_limit') {
+      setAi({ kind: 'quota', resets_at: res.resets_at, usage: res.usage });
+    } else {
+      setAi({ kind: 'error', message: res.error });
+    }
+  }, [matchId]);
 
   const stats = useMemo(() => (state ? aggregate(state.history, state.config.positions) : null), [state]);
 
@@ -99,16 +125,144 @@ export default function PostMatchScreen() {
         <SectionTitle index="03" title="Match Summary" />
         <SummaryGrid state={state} />
 
-        <Pressable disabled style={styles.aiBtn}>
-          <View style={styles.aiBtnRow}>
-            <Ionicons name="flash" size={14} color={colors.accent} />
-            <Text style={styles.aiBtnLabel}>GENERATE AI REPORT</Text>
-          </View>
-          <Text style={styles.aiBtnSub}>COMING SOON · TACTICAL BREAKDOWN</Text>
-        </Pressable>
+        <AISummarySection
+          ai={ai}
+          positions={state.config.positions}
+          onGenerate={generate}
+          onRetry={generate}
+        />
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+function AISummarySection({
+  ai,
+  positions,
+  onGenerate,
+  onRetry,
+}: {
+  ai: AIState;
+  positions: Record<Position, string>;
+  onGenerate: () => void;
+  onRetry: () => void;
+}) {
+  if (ai.kind === 'loaded') {
+    return (
+      <AISummaryView
+        payload={ai.payload}
+        cached={ai.cached}
+        positions={positions}
+        usage={ai.usage}
+      />
+    );
+  }
+
+  if (ai.kind === 'loading') {
+    return (
+      <View style={styles.aiWrap}>
+        <Pressable disabled style={styles.aiBtnLoading}>
+          <View style={styles.aiBtnRow}>
+            <ActivityIndicator size="small" color={colors.onAccent} />
+            <Text style={styles.aiBtnLabelLoading}>GENERATING…</Text>
+          </View>
+          <Text style={styles.aiBtnSubLoading}>CLAUDE IS ANALYZING THE MATCH</Text>
+        </Pressable>
+        <ShimmerSkeleton />
+      </View>
+    );
+  }
+
+  if (ai.kind === 'quota') {
+    return (
+      <View style={styles.aiWrap}>
+        <View style={styles.aiStateCard}>
+          <View style={styles.aiStateHeader}>
+            <Ionicons name="time-outline" size={14} color={colors.warn} />
+            <Text style={[styles.aiStateLabel, { color: colors.warn }]}>MONTHLY LIMIT REACHED</Text>
+          </View>
+          <Text style={styles.aiStateBody}>
+            You&apos;ve used {ai.usage.used} of {ai.usage.limit} AI reports this month.
+          </Text>
+          <Text style={styles.aiStateSub}>Resets {formatResetDate(ai.resets_at)}</Text>
+          <View style={styles.aiStateChipRow}>
+            <Chip label={`${ai.usage.used} OF ${ai.usage.limit}`} kind="warn" small />
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  if (ai.kind === 'error') {
+    return (
+      <View style={styles.aiWrap}>
+        <View style={styles.aiStateCard}>
+          <View style={styles.aiStateHeader}>
+            <Ionicons name="alert-circle-outline" size={14} color={colors.error} />
+            <Text style={[styles.aiStateLabel, { color: colors.error }]}>COULDN&apos;T GENERATE</Text>
+          </View>
+          <Text style={styles.aiStateBody}>
+            {errorMessage(ai.message)}
+          </Text>
+          <Pressable onPress={onRetry} style={styles.aiRetryBtn}>
+            <Ionicons name="refresh" size={14} color={colors.accent} />
+            <Text style={styles.aiRetryLabel}>TRY AGAIN</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.aiWrap}>
+      <Pressable onPress={onGenerate} style={({ pressed }) => [styles.aiBtnIdle, pressed && styles.aiBtnPressed]}>
+        <View style={styles.aiBtnRow}>
+          <Ionicons name="flash" size={14} color={colors.onAccent} />
+          <Text style={styles.aiBtnLabelIdle}>GENERATE AI REPORT</Text>
+        </View>
+        <Text style={styles.aiBtnSubIdle}>TACTICAL BREAKDOWN · 30 SEC</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function ShimmerSkeleton() {
+  const pulse = useSharedValue(0.35);
+  useEffect(() => {
+    pulse.value = withRepeat(withTiming(0.85, { duration: 900 }), -1, true);
+  }, [pulse]);
+  const pulseStyle = useAnimatedStyle(() => ({ opacity: pulse.value }));
+
+  return (
+    <View style={styles.skelWrap}>
+      <Animated.View style={[styles.skelLine, styles.skelLineLong, pulseStyle]} />
+      <Animated.View style={[styles.skelLine, styles.skelLineLong, pulseStyle]} />
+      <Animated.View style={[styles.skelLine, styles.skelLineMed, pulseStyle]} />
+      <View style={styles.skelGrid}>
+        <Animated.View style={[styles.skelCard, pulseStyle]} />
+        <Animated.View style={[styles.skelCard, pulseStyle]} />
+        <Animated.View style={[styles.skelCard, pulseStyle]} />
+        <Animated.View style={[styles.skelCard, pulseStyle]} />
+      </View>
+    </View>
+  );
+}
+
+function formatResetDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'soon';
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function errorMessage(code: string): string {
+  switch (code) {
+    case 'not_found':
+      return 'No match data found for this report.';
+    case 'unauthorized':
+      return 'Please sign in again to generate a report.';
+    default:
+      return 'Something went wrong. Check your connection and retry.';
+  }
 }
 
 function FinalScore({ state }: { state: MatchState }) {
@@ -341,29 +495,119 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: colors.surface2,
   },
-  aiBtn: {
-    marginTop: 16,
+  aiWrap: { marginTop: 16, gap: 12 },
+  aiBtnIdle: {
     padding: 16,
     borderRadius: 14,
     borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
+    borderColor: colors.accent,
+    backgroundColor: colors.accent,
     alignItems: 'center',
     gap: 4,
-    opacity: 0.7,
+  },
+  aiBtnPressed: { opacity: 0.85, transform: [{ scale: 0.99 }] },
+  aiBtnLoading: {
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    gap: 4,
+    opacity: 0.85,
   },
   aiBtnRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  aiBtnLabel: {
+  aiBtnLabelIdle: {
     fontFamily: fonts.extrabold,
     fontSize: 12,
-    color: colors.ink,
+    color: colors.onAccent,
     letterSpacing: 2,
   },
-  aiBtnSub: {
+  aiBtnSubIdle: {
     fontFamily: fonts.bold,
     fontSize: 10,
-    color: colors.ink3,
+    color: colors.onAccent,
     letterSpacing: 1.6,
+    opacity: 0.75,
+  },
+  aiBtnLabelLoading: {
+    fontFamily: fonts.extrabold,
+    fontSize: 12,
+    color: colors.onAccent,
+    letterSpacing: 2,
+  },
+  aiBtnSubLoading: {
+    fontFamily: fonts.bold,
+    fontSize: 10,
+    color: colors.onAccent,
+    letterSpacing: 1.6,
+    opacity: 0.75,
+  },
+  aiStateCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    padding: 16,
+    gap: 8,
+  },
+  aiStateHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  aiStateLabel: {
+    fontFamily: fonts.bold,
+    fontSize: 11,
+    letterSpacing: 1.6,
+  },
+  aiStateBody: {
+    color: colors.ink,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  aiStateSub: {
+    color: colors.ink3,
+    fontFamily: fonts.bold,
+    fontSize: 10,
+    letterSpacing: 1.4,
+  },
+  aiStateChipRow: { flexDirection: 'row', marginTop: 4 },
+  aiRetryBtn: {
+    marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+  },
+  aiRetryLabel: {
+    fontFamily: fonts.bold,
+    fontSize: 10,
+    color: colors.accent,
+    letterSpacing: 1.4,
+  },
+  skelWrap: { gap: 10 },
+  skelLine: {
+    height: 10,
+    borderRadius: 4,
+    backgroundColor: colors.surface2,
+  },
+  skelLineLong: { width: '100%' },
+  skelLineMed: { width: '70%' },
+  skelGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 6,
+  },
+  skelCard: {
+    width: '48%',
+    flexGrow: 1,
+    height: 92,
+    borderRadius: 14,
+    backgroundColor: colors.surface2,
   },
 });
