@@ -29,7 +29,7 @@ function formatClock(start: number, now: number): string {
 export default function LiveScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ id: string }>();
-  const matchId = useMemo(() => Number(params.id), [params.id]);
+  const matchId = useMemo(() => String(params.id ?? ''), [params.id]);
   const { state, loading, logPoint, undoLast, switchSides, finish } = useMatch(matchId);
   const [active, setActive] = useState<{ pos: Position; name: string } | null>(null);
   const [confirmFinish, setConfirmFinish] = useState(false);

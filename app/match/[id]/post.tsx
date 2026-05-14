@@ -31,7 +31,7 @@ function formatDuration(start: number, end: number): string {
 export default function PostMatchScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ id: string }>();
-  const matchId = useMemo(() => Number(params.id), [params.id]);
+  const matchId = useMemo(() => String(params.id ?? ''), [params.id]);
   const [state, setState] = useState<MatchState | null>(null);
   const [duration, setDuration] = useState('00:00');
 
